@@ -1,0 +1,344 @@
+import pandas as pd
+
+df = pd.read_excel(r"D:\Download\PredactiveDataSet.xlsx")
+print(df.head())
+
+print("Checking for the null values from each column: \n", df.isnull().sum())
+print("Their are no null values, 0 missing values")
+
+print("Number of  duplicate values :", df.duplicated().sum())
+print("Their are no duplicates values, data is clean")
+
+print("Rows and columns: ", df.shape)
+
+print(df.dtypes)
+print("Unique values in each columns: \n",df.nunique())
+
+print(df["PACK SIZE"].unique())
+print(df['FMS'].unique())
+print(df['R/B'].unique())
+
+#Visuals of EDA
+import matplotlib.pyplot as plt
+df['FILLING VOL'].value_counts().sort_index().plot(kind='bar')
+plt.xlabel("Filling Volume")
+plt.ylabel("Count")
+plt.title("Filling Volume Frequency")
+plt.show()
+
+
+df['R/B'].value_counts().plot(
+    kind='bar',
+    color=['lightcoral', 'lightskyblue']
+)
+plt.xlabel("Sales Type")
+plt.ylabel("Count")
+plt.title("Retail vs Bulk Distribution")
+plt.show()
+
+def convert_to_liters(x):
+    x = x.strip().upper()
+
+    if "ML" in x:
+        value = float(x.replace("ML", "").strip())
+        return value / 1000   # convert ml to liters
+
+    elif "LTR" in x:
+        value = float(x.replace("LTR", "").strip())
+        return value
+
+    elif "L" in x:
+        value = float(x.replace("L", "").strip())
+        return value
+
+    else:
+        return None
+
+df['PACK_SIZE_LITERS'] = df['PACK SIZE'].apply(convert_to_liters)
+print(df['PACK_SIZE_LITERS'].head(10) )
+
+
+def fms(x):
+    x = x.strip().upper()
+
+    if x == "S":
+        return "Standard"
+    elif x == "M":
+        return "Medium"
+    elif x == "F":
+        return "Fine"
+    else:
+        return None
+
+df['FMS_MAPPED'] = df['FMS'].apply(fms)
+df.drop(columns = 'FMS',inplace = True)
+print(df['FMS_MAPPED'].head())
+
+
+df.drop(columns = 'Description', inplace = True)
+print(df.columns)
+
+def volume_category(x):
+    if x <= 1:
+        return "SMALL"
+    elif x <= 5:
+        return "MEDIUM"
+    else:
+        return "LARGE"
+    
+df['VOLUME_CATEGORY'] = df['PACK_SIZE_LITERS'].apply(volume_category)
+df[['PACK_SIZE_LITERS', 'VOLUME_CATEGORY']].head(10)
+
+df['RB_ENCODED'] = df['R/B'].map({'Retail' : 0, 'Bulk' : 1})
+print(df[['R/B', 'RB_ENCODED']].head())
+
+print(df.dtypes)
+
+#Implementing Models 
+#Linear Regression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import MinMaxScaler
+
+x = df.drop(['FILLING VOL','SKU CODE'], axis = 1)
+y = df['FILLING VOL']
+
+x = pd.get_dummies(x, drop_first= True)
+
+x = x.fillna(0)
+x_train, x_test, y_train, y_test = train_test_split(
+                                x,y, test_size=0.2, random_state = 42)
+
+scaler = MinMaxScaler()
+
+x_train = scaler.fit_transform(x_train)
+x_test = scaler.transform(x_test)
+
+model = LinearRegression()
+model.fit(x_train, y_train)
+
+y_pred = model.predict(x_test)
+
+r2 = r2_score(y_test, y_pred)
+print("\nR² Score: ", r2)
+
+mse = mean_squared_error(y_test, y_pred)
+print("Mean squared error: ", mse)
+
+rmse = mse ** 0.5
+print("Root mean square: ", rmse)
+
+print("\nConclusion for Linear Regression: \n")
+print("The model is able to predict the Filling Volume almost perfectly.")
+print("It gave an R² score of {:.4f}, which means the model explains about {:.2f}% variation in the data.\n".format(r2, r2*100))
+print("The RMSE is {:.4f}, so the average error in prediction is very small.\n".format(rmse))
+print("This shows that filling volume mainly depends on the product details like pack size, brand, surface, shade and whether it is Retail or Bulk.\n")
+print("So the company can use this model to estimate filling volume for new products and plan production better.\n")
+
+
+#polynomial Regression
+print("\nPloynomial regression: \n")
+from sklearn.preprocessing import PolynomialFeatures
+
+# Polynomial Features
+poly = PolynomialFeatures(degree=2)
+
+x_train_poly = poly.fit_transform(x_train)
+x_test_poly = poly.transform(x_test)
+
+#model
+model_poly = LinearRegression()
+model_poly.fit(x_train_poly, y_train)
+
+y_pred_poly = model_poly.predict(x_test_poly)
+
+r2_poly = r2_score(y_test, y_pred_poly)
+mse_poly = mean_squared_error(y_test, y_pred_poly)
+rmse_poly =  mse_poly ** 0.5
+
+print("R² Score:", r2_poly)
+print("Mean Squared Error:", mse_poly)
+print("Root Mean Square Error:", rmse_poly)
+
+print("\nConclusion: Polynomial Regression (degree=2) checks whether a non-linear curve fits the data better than simple straight-line Linear Regression.")
+
+# Recreating test split only for plotting
+plot_feature = df['PACK_SIZE_LITERS']
+
+_, x_test_plot = train_test_split(plot_feature, test_size=0.2, random_state=42)
+
+x_plot = x_test_plot
+y_plot = y_test
+y_pred_plot = y_pred_poly
+
+plt.scatter(x_plot, y_plot, label='Actual Data', alpha=0.6)
+
+sorted_idx = x_plot.argsort()
+
+plt.plot(
+    x_plot.iloc[sorted_idx],
+    y_pred_plot[sorted_idx],
+    color='red',
+    linewidth=2,
+    label='Polynomial Fit (degree=2)'
+)
+
+plt.xlabel("PACK_SIZE_LITERS")
+plt.ylabel("FILLING VOL")
+plt.title("Polynomial Regression Fit")
+plt.legend()
+plt.show()
+
+#KNN
+# New target for classification
+X_class = df.drop(['VOLUME_CATEGORY', 'SKU CODE'], axis=1)
+y_class = df['VOLUME_CATEGORY']
+
+X_class = pd.get_dummies(X_class, drop_first=True)
+
+X_class = X_class.fillna(0)
+
+X_train_c, X_test_c, y_train_c, y_test_c = train_test_split(
+    X_class, y_class, test_size=0.2, random_state=42
+)
+
+from sklearn.neighbors import KNeighborsClassifier
+knn_model = KNeighborsClassifier(n_neighbors=5)
+knn_model.fit(X_train_c, y_train_c)
+
+# Predictions
+y_pred_c = knn_model.predict(X_test_c)
+
+# Metrics
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+print("\nKNN output: \n")
+print("Accuracy:", accuracy_score(y_test_c, y_pred_c) *100)
+print("Confusion Matrix:\n", confusion_matrix(y_test_c, y_pred_c))
+print("Classification Report:\n", classification_report(y_test_c, y_pred_c))
+
+print("\nConclusion: KNN Classifier predicted SMALL / MEDIUM / LARGE using the nearest similar paint records.")
+
+#Decision Tree
+max_vol = df['FILLING VOL'].max()
+
+bins = [0, max_vol/3, (max_vol/3)*2, max_vol]
+labels = ['SMALL', 'MEDIUM', 'LARGE']
+
+df['Size'] = pd.cut(df['FILLING VOL'], bins=bins, labels=labels, include_lowest=True)
+
+
+y= df['Size']
+
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+dt = DecisionTreeClassifier(criterion='entropy', random_state=42)
+dt.fit(x_train, y_train)
+
+y_pred_dt = dt.predict(x_test)
+
+print("\nDecision Tree Accuracy:", accuracy_score(y_test, y_pred_dt) * 100)
+print("\nConfusion Matrix:\n", confusion_matrix(y_test, y_pred_dt))
+print("\nClassification Report:\n", classification_report(y_test, y_pred_dt))
+
+print("\nConclusion: The Decision Tree classifier perfectly learned the patterns in the paint dataset and classified SMALL, MEDIUM, and LARGE categories with 100% accuracy. This means the dataset has very clear rules, making Decision Tree a highly effective model for this problem.")
+
+from sklearn.tree import plot_tree
+
+plt.figure(figsize=(20,10))
+plot_tree(dt, 
+          feature_names=x.columns, 
+          class_names=['LARGE', 'MEDIUM', 'SMALL'],
+          filled=True,
+          rounded=True,
+          fontsize=8)
+plt.title("Decision Tree Visualization")
+plt.show()
+
+#SVM
+from sklearn.svm import SVC
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+
+model_svm = SVC(kernel='rbf')
+
+model_svm.fit(x_train, y_train)
+
+y_pred_svm = model_svm.predict(x_test)
+
+print("SVM Accuracy:", accuracy_score(y_test, y_pred_svm) * 100)
+print("\nConfusion Matrix:\n", confusion_matrix(y_test, y_pred_svm))
+print("\nClassification Report:\n", classification_report(y_test, y_pred_svm))
+
+print("\nConclusion: The SVM model with RBF kernel performed well because the dataset is non-linear. The RBF kernel helped the model create flexible decision boundaries, allowing it to correctly classify SMALL, MEDIUM, and LARGE paint volumes. This shows that SVM is effective for complex patterns and gives reliable results for this dataset.")
+
+from sklearn.inspection import DecisionBoundaryDisplay
+
+X_vis = x.iloc[:, :2].values
+y_vis = y.values
+
+#numeric codes for visualization
+y_vis_codes = pd.Categorical(y_vis).codes
+
+# Training SVM again only for visualization
+model_svm_vis = SVC(kernel='rbf')
+model_svm_vis.fit(X_vis, y_vis_codes)
+
+DecisionBoundaryDisplay.from_estimator(
+    model_svm_vis,
+    X_vis,
+    response_method='predict',
+    cmap='Blues',
+    alpha=0.6
+)
+
+plt.scatter(X_vis[:, 0], X_vis[:, 1],
+            c=y_vis_codes, edgecolors='k', s=40)
+
+plt.xlabel(x.columns[0])
+plt.ylabel(x.columns[1])
+plt.title("SVM Decision Boundary (Using First 2 Features)")
+plt.show()
+
+#Comparing the all the models
+r2_lr = r2
+r2_pr = r2_poly
+
+models_reg = ['Linear Regression', 'Polynomial Regression']
+scores_reg = [r2_lr, r2_pr]
+
+colors = ['moccasin', 'plum']
+
+plt.bar(models_reg, scores_reg, color=colors)
+plt.ylabel("R² Score")
+plt.title("Regression Model Comparison")
+plt.ylim(0,1)
+plt.show()
+
+
+acc_knn = accuracy_score(y_test_c, y_pred_c)
+acc_dt = accuracy_score(y_test, y_pred_dt)
+acc_svm = accuracy_score(y_test, y_pred_svm)
+
+colors = ['lightskyblue', 'lightpink', 'peachpuff']
+
+models_clf = ['KNN', 'Decision Tree', 'SVM']
+accuracy_clf = [acc_knn, acc_dt, acc_svm]
+
+plt.bar(models_clf, accuracy_clf, color=colors)
+plt.ylabel("Accuracy")
+plt.title("Classification Model Comparison")
+plt.ylim(0,1)
+plt.show()
+
+print("\nFinal Conclusion:")
+print("From all the models I applied, Linear Regression gave the best results for predicting the exact Filling Volume.")
+print("It gave a very high R² score with very low error, so it is the most reliable model for numerical prediction in this project.")
+print()
+print("For classification, the Decision Tree model performed the best. It classified SMALL, MEDIUM and LARGE perfectly with 100% accuracy.")
+print("This shows that the dataset has clear patterns which the Decision Tree was able to learn easily.")
+print()
+print("So overall, Linear Regression is the best model for predicting the volume value,")
+print("and Decision Tree is the best model for classifying the size category.")
